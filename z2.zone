@@ -1,0 +1,20 @@
+{
+    "$origin": "umbertofontana.it.",
+    "$ttl": 1,
+    "soa": {
+        "mname": "ns1.umbertofontana.it.",
+        "rname": "admin.umbertofontana.it.",
+        "serial": "{time}",
+        "refresh": 1,
+        "retry": 10,
+        "expire": 1,
+        "minimum": 1
+    },
+    "ns": [
+        { "host": "ns1.umbertofontana.it." },
+        { "host": "ns2.umbertofontana.it." }
+    ],
+    "a": [
+        { "name": "@", "ttl": 1, "value": "127.0.0.1" }
+    ]
+}
