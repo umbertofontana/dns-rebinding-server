@@ -1,0 +1,99 @@
+#!/usr/bin/env python3
+import socketserver
+from dnslib import DNSRecord, RR, QTYPE, A, AAAA, NS, TXT
+
+# Zona "finta": metti qui i record che vuoi servire
+# chiave = nome (con . finale o senza)
+ZONE = {
+    "example.local.": {
+        "A": ["203.0.113.10"],
+        "TXT": ["v=example-dns"],
+        "NS": ["ns1.example.local."],
+    },
+    "www.example.local.": {
+        "A": ["203.0.113.20"],
+    },
+    "ns1.example.local.": {
+        "A": ["203.0.113.53"],
+    },
+}
+
+# TTL di default
+DEFAULT_TTL = 300
+
+
+def find_records(qname, qtype):
+    """
+    Cerca i record nella ZONE in base al nome e al tipo.
+    Restituisce una lista di dnslib.RR.
+    """
+    name = str(qname).lower()
+    if not name.endswith("."):
+        name += "."
+
+    entry = ZONE.get(name)
+    if not entry:
+        return []
+
+    answers = []
+    # Se il client chiede "ANY", restituiamo tutto quello che sappiamo
+    if qtype == QTYPE.ANY:
+        for rtype, values in entry.items():
+            for v in values:
+                answers.append(make_rr(name, rtype, v))
+        return answers
+
+    # altrimenti solo quel tipo
+    rtype_name = QTYPE[qtype]
+    if rtype_name in entry:
+        for v in entry[rtype_name]:
+            answers.append(make_rr(name, rtype_name, v))
+
+    return answers
+
+
+def make_rr(name, rtype, value):
+    """
+    Crea un RR dnslib dal tipo e valore nella zona.
+    """
+    if rtype == "A":
+        return RR(name, QTYPE.A, rdata=A(value), ttl=DEFAULT_TTL)
+    elif rtype == "AAAA":
+        return RR(name, QTYPE.AAAA, rdata=AAAA(value), ttl=DEFAULT_TTL)
+    elif rtype == "NS":
+        return RR(name, QTYPE.NS, rdata=NS(value), ttl=DEFAULT_TTL)
+    elif rtype == "TXT":
+        return RR(name, QTYPE.TXT, rdata=TXT(value), ttl=DEFAULT_TTL)
+    else:
+        # se non lo gestiamo, non rispondiamo
+        return None
+
+
+class DNSHandler(socketserver.BaseRequestHandler):
+    def handle(self):
+        data, sock = self.request
+        request = DNSRecord.parse(data)
+
+        reply = request.reply()
+        qname = request.q.qname
+        qtype = request.q.qtype
+
+        answers = find_records(qname, qtype)
+
+        if answers:
+            for rr in answers:
+                if rr is not None:
+                    reply.add_answer(rr)
+        else:
+            # Se non lo conosciamo, NXDOMAIN
+            reply.header.rcode = 3  # NXDOMAIN
+
+        sock.sendto(reply.pack(), self.client_address)
+
+
+if __name__ == "__main__":
+    # ATTENZIONE: porta 53 richiede privilegi di root su molti sistemi
+    HOST, PORT = "0.0.0.0", 53
+    with socketserver.UDPServer((HOST, PORT), DNSHandler) as server:
+        print(f"DNS autoritativo in ascolto su {HOST}:{PORT}")
+        server.serve_forever()
